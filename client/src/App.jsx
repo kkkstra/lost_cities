@@ -7,6 +7,10 @@ const COLORS = [
   { id: "yellow", name: "黄" },
   { id: "white", name: "白" }
 ];
+const COLOR_ORDER = COLORS.reduce((acc, color, index) => {
+  acc[color.id] = index;
+  return acc;
+}, {});
 
 function useSocket(url) {
   const [socket, setSocket] = useState(null);
@@ -69,6 +73,19 @@ function scoreAll(expeditions) {
   return Object.values(expeditions).reduce((acc, expedition) => acc + scoreExpedition(expedition), 0);
 }
 
+function sortHand(cards) {
+  if (!cards) return [];
+  return [...cards].sort((a, b) => {
+    const colorDiff = (COLOR_ORDER[a.color] ?? 0) - (COLOR_ORDER[b.color] ?? 0);
+    if (colorDiff !== 0) return colorDiff;
+    const typeWeight = (card) => (card.type === "wager" ? 0 : 1);
+    const typeDiff = typeWeight(a) - typeWeight(b);
+    if (typeDiff !== 0) return typeDiff;
+    if (a.type === "number" && b.type === "number") return a.value - b.value;
+    return 0;
+  });
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -107,6 +124,7 @@ export default function App() {
       opponent: scoreAll(gameState.opponent.expeditions)
     };
   }, [gameState]);
+  const sortedHand = useMemo(() => sortHand(gameState?.your.hand), [gameState?.your.hand]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -387,7 +405,7 @@ export default function App() {
               <div className="stack">
                 <h3>你的手牌</h3>
                 <div className="hand">
-                  {gameState.your.hand.map((card) => (
+                  {sortedHand.map((card) => (
                     <HandCard
                       key={card.id}
                       card={card}
