@@ -226,8 +226,43 @@ export default function App() {
     <div>
       <header>
         <h1>Lost Cities</h1>
-        <div className="badge">{connected ? "已连接" : "未连接"}</div>
+        <div className="header-right">
+          {roomState && gameState && (
+            <div className="header-meta">
+              <div className="info-chip info-room header-chip">
+                <span>房间 {roomState.code}</span>
+                <button
+                  className="chip-action"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(roomState.code);
+                    setCopied(true);
+                  }}
+                  title="复制房间号"
+                >
+                  {copied ? "已复制" : "复制"}
+                </button>
+                <span className="chip-meta">
+                  {gameState.roundIndex}/{gameState.roundsTotal === 0 ? "∞" : gameState.roundsTotal}
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="badge">{connected ? "已连接" : "未连接"}</div>
+        </div>
       </header>
+      {roomState && gameState && (
+        <aside className={`floating-score ${isMyTurn ? "highlight" : ""}`}>
+          <div className="floating-score-title">比分</div>
+          <div className="floating-score-line">
+            <span>总分</span>
+            <strong>你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]}</strong>
+          </div>
+          <div className="floating-score-line">
+            <span>本局</span>
+            <strong>你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}</strong>
+          </div>
+        </aside>
+      )}
 
       <main>
         {!roomState && (
@@ -341,78 +376,84 @@ export default function App() {
         {roomState && gameState && (
           <div className="wood-frame">
             <div className="felt-surface">
-              <div className="info-bar compact">
-                <div className="info-chip info-room">
-                  <span>房间 {roomState.code}</span>
-                  <button
-                    className="chip-action"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(roomState.code);
-                      setCopied(true);
-                    }}
-                    title="复制房间号"
-                  >
-                    {copied ? "已复制" : "复制"}
-                  </button>
-                  <span className="chip-meta">
-                    {gameState.roundIndex}/{gameState.roundsTotal === 0 ? "∞" : gameState.roundsTotal}
-                  </span>
-                </div>
-                <div className={`info-chip score-line ${isMyTurn ? "highlight" : ""}`}>
-                  总分 你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]} · 本局 你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}
-                </div>
+              <div className="table-area">
+                <section className="table-zone">
+                  <h3>对手探险列</h3>
+                  {COLORS.map((color) => {
+                    const opponentExpedition = gameState.opponent.expeditions[color.id];
+                    const opponentColorScore = scoreExpedition(opponentExpedition);
+                    return (
+                    <div key={color.id} className="expedition-row">
+                      <div className="row-head">
+                        <div className="row-label">{color.name}</div>
+                        <div className={`row-score ${opponentColorScore > 0 ? "positive" : opponentColorScore < 0 ? "negative" : ""}`}>
+                          {opponentColorScore > 0 ? `+${opponentColorScore}` : opponentColorScore}
+                        </div>
+                      </div>
+                      <div className="expedition-cards">
+                        {opponentExpedition.map((card) => (
+                          <Card key={card.id} card={card} />
+                        ))}
+                      </div>
+                    </div>
+                    );
+                  })}
+                </section>
+
+                <section className="table-zone center-zone">
+                  <div className="center-piles">
+                    <div className="stack">
+                      <h3>弃牌堆</h3>
+                      <div className="pile-grid">
+                        {COLORS.map((color) => (
+                          <Card
+                            key={color.id}
+                            card={gameState.discardTops[color.id]}
+                            selectable={phaseAction === "draw"}
+                            onClick={() => drawCard("discard", color.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="stack">
+                      <h3>抽牌堆</h3>
+                      <div
+                        className={`card card-back deck-pile ${phaseAction === "draw" ? "selectable" : ""}`}
+                        onClick={() => phaseAction === "draw" && drawCard("deck")}
+                      >
+                        <div className="label">抽牌</div>
+                        <div className="value">{gameState.deckCount}</div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="table-zone">
+                  <h3>你的探险列</h3>
+                  {COLORS.map((color) => {
+                    const yourExpedition = gameState.your.expeditions[color.id];
+                    const yourColorScore = scoreExpedition(yourExpedition);
+                    return (
+                    <div key={color.id} className="expedition-row">
+                      <div className="row-head">
+                        <div className="row-label">{color.name}</div>
+                        <div className={`row-score ${yourColorScore > 0 ? "positive" : yourColorScore < 0 ? "negative" : ""}`}>
+                          {yourColorScore > 0 ? `+${yourColorScore}` : yourColorScore}
+                        </div>
+                      </div>
+                      <div className="expedition-cards">
+                        {yourExpedition.map((card) => (
+                          <Card key={card.id} card={card} />
+                        ))}
+                      </div>
+                    </div>
+                    );
+                  })}
+                </section>
               </div>
 
-              <div className="table-area">
-                <div className="stack table-col opponent-col">
-                  <h3>对手探险列</h3>
-                  {COLORS.map((color) => (
-                    <div key={color.id} className="expedition-row">
-                      <div className="row-label">{color.name}</div>
-                      <div className="expedition-cards">
-                        {gameState.opponent.expeditions[color.id].map((card) => (
-                          <Card key={card.id} card={card} />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="stack table-col center-col">
-                  <h3>弃牌堆</h3>
-                  <div className="pile-grid">
-                    {COLORS.map((color) => (
-                      <Card
-                        key={color.id}
-                        card={gameState.discardTops[color.id]}
-                        selectable={phaseAction === "draw"}
-                        onClick={() => drawCard("discard", color.id)}
-                      />
-                    ))}
-                  </div>
-                  <h3>抽牌堆</h3>
-                  <div
-                    className={`card card-back ${phaseAction === "draw" ? "selectable" : ""}`}
-                    onClick={() => phaseAction === "draw" && drawCard("deck")}
-                  >
-                    <div className="label">抽牌</div>
-                    <div className="value">{gameState.deckCount}</div>
-                  </div>
-                </div>
-                <div className="stack table-col player-col">
-                  <h3>你的探险列</h3>
-                  {COLORS.map((color) => (
-                    <div key={color.id} className="expedition-row">
-                      <div className="row-label">{color.name}</div>
-                      <div className="expedition-cards">
-                        {gameState.your.expeditions[color.id].map((card) => (
-                          <Card key={card.id} card={card} />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="stack">
+              <div className="stack hand-zone">
                 <h3>你的手牌</h3>
                 <div className="hand">
                   {sortedHand.map((card) => (
