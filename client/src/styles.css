@@ -64,10 +64,10 @@ header h1 {
 
 .header-meta {
   display: grid;
-  grid-template-columns: minmax(210px, auto) minmax(360px, 1fr);
+  grid-template-columns: minmax(210px, auto);
   align-items: center;
   gap: 10px;
-  width: min(860px, 100%);
+  width: min(320px, 100%);
   min-width: 0;
 }
 
@@ -75,11 +75,40 @@ header h1 {
   margin: 0;
 }
 
-.header-score {
-  text-align: center;
+.floating-score {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(202, 162, 90, 0.45);
+  background: rgba(20, 36, 27, 0.82);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+  z-index: 8;
+  pointer-events: none;
+}
+
+.floating-score-title {
+  font-family: "Cinzel", serif;
+  color: var(--gold);
+  font-size: 14px;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+.floating-score-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.floating-score-line + .floating-score-line {
+  margin-top: 6px;
 }
 
 button {
@@ -461,9 +490,16 @@ main {
 
 .expedition-row {
   display: grid;
-  grid-template-columns: 30px 1fr;
+  grid-template-columns: 52px 1fr;
   gap: 8px;
   align-items: start;
+}
+
+.row-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .expedition-cards {
@@ -471,6 +507,29 @@ main {
   gap: 8px;
   flex-wrap: wrap;
   min-height: 58px;
+}
+
+.row-score {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(247, 241, 230, 0.2);
+  background: rgba(247, 241, 230, 0.08);
+  color: rgba(247, 241, 230, 0.88);
+}
+
+.row-score.positive {
+  border-color: rgba(118, 210, 140, 0.45);
+  background: rgba(66, 138, 81, 0.22);
+  color: #b9f4c6;
+}
+
+.row-score.negative {
+  border-color: rgba(228, 130, 122, 0.45);
+  background: rgba(147, 60, 52, 0.24);
+  color: #ffd1cc;
 }
 
 .card.color-red { background: linear-gradient(160deg, #ffd6d1 0%, #f3b6b0 100%); }
@@ -564,9 +623,13 @@ main {
     grid-template-columns: 1fr;
   }
 
-  .header-score {
-    text-align: center;
-    white-space: normal;
+  .floating-score {
+    top: auto;
+    bottom: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: 420px;
   }
 
   .table-zone,
@@ -620,7 +683,7 @@ main {
   }
 
   .expedition-row {
-    grid-template-columns: 36px 1fr;
+    grid-template-columns: 46px 1fr;
     gap: 8px;
   }
 
