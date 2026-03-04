@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const COLORS = [
   { id: "red", name: "红" },
@@ -84,6 +84,50 @@ function sortHand(cards) {
   });
 }
 
+function expeditionsForSeat(state, seat, selfSeat) {
+  if (!state) return null;
+  return seat === selfSeat ? state.your.expeditions : state.opponent.expeditions;
+}
+
+function describePlayAction(prevState, nextState, actorSeat, selfSeat) {
+  const prevExpeditions = expeditionsForSeat(prevState, actorSeat, selfSeat);
+  const nextExpeditions = expeditionsForSeat(nextState, actorSeat, selfSeat);
+
+  for (const color of COLORS) {
+    const prevLen = prevExpeditions?.[color.id]?.length ?? 0;
+    const nextLen = nextExpeditions?.[color.id]?.length ?? 0;
+    if (nextLen > prevLen) {
+      return `打出了${color.name}探险牌`;
+    }
+  }
+
+  for (const color of COLORS) {
+    const prevTopId = prevState?.discardTops?.[color.id]?.id ?? null;
+    const nextTop = nextState?.discardTops?.[color.id];
+    if (nextTop && nextTop.id !== prevTopId) {
+      return `弃掉了${color.name}牌`;
+    }
+  }
+
+  return "完成了出牌";
+}
+
+function describeDrawAction(prevState, nextState) {
+  if ((nextState?.deckCount ?? 0) < (prevState?.deckCount ?? 0)) {
+    return "从牌堆抽了一张牌";
+  }
+
+  for (const color of COLORS) {
+    const prevTopId = prevState?.discardTops?.[color.id]?.id ?? null;
+    const nextTopId = nextState?.discardTops?.[color.id]?.id ?? null;
+    if (prevTopId !== nextTopId) {
+      return `从${color.name}弃牌堆抽了一张牌`;
+    }
+  }
+
+  return "完成了抽牌";
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -114,6 +158,7 @@ export default function App() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [roundsTotal, setRoundsTotal] = useState("3");
   const [copied, setCopied] = useState(false);
+  const [toasts, setToasts] = useState([]);
   const [reconnectToken, setReconnectToken] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("lostcities-token") || "";
@@ -122,8 +167,16 @@ export default function App() {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("lostcities-code") || "";
   });
+  const toastTimersRef = useRef(new Map());
+  const nextToastIdRef = useRef(1);
+  const prevRoomRef = useRef(null);
+  const prevGameRef = useRef(null);
 
   const playerIndex = roomState?.playerIndex ?? -1;
+  const myPlayer = roomState?.players?.find((p) => p.id === roomState.you) || null;
+  const opponentPlayer = roomState?.players?.find((p) => p.id !== roomState.you) || null;
+  const myName = myPlayer?.name || "你";
+  const opponentName = opponentPlayer?.name || "等待对手";
   const isMyTurn = gameState && gameState.turn === playerIndex;
   const liveRoundScores = useMemo(() => {
     if (!gameState) return null;
@@ -133,6 +186,16 @@ export default function App() {
     };
   }, [gameState]);
   const sortedHand = useMemo(() => sortHand(gameState?.your.hand), [gameState?.your.hand]);
+  const pushToast = useCallback((text) => {
+    if (!text) return;
+    const id = nextToastIdRef.current++;
+    setToasts((prev) => [...prev, { id, text }].slice(-4));
+    const timer = setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+      toastTimersRef.current.delete(id);
+    }, 2800);
+    toastTimersRef.current.set(id, timer);
+  }, []);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -172,6 +235,50 @@ export default function App() {
     localStorage.setItem("lostcities-code", roomState.code);
     setReconnectCode(roomState.code);
   }, [roomState?.code]);
+
+  useEffect(() => () => {
+    for (const timer of toastTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    toastTimersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!roomState) {
+      prevRoomRef.current = null;
+      return;
+    }
+    const prevRoom = prevRoomRef.current;
+    if (prevRoom) {
+      const prevIds = new Set(prevRoom.players.map((player) => player.id));
+      const joinedPlayers = roomState.players.filter((player) => !prevIds.has(player.id));
+      for (const player of joinedPlayers) {
+        pushToast(`${player.name} 加入了房间`);
+      }
+    }
+    prevRoomRef.current = roomState;
+  }, [roomState, pushToast]);
+
+  useEffect(() => {
+    if (!gameState || !roomState) {
+      prevGameRef.current = gameState || null;
+      return;
+    }
+    const prevGame = prevGameRef.current;
+    if (prevGame) {
+      const playerNamesBySeat = new Map(roomState.players.map((player) => [player.seat, player.name]));
+      const actorName = (seat) => (seat === playerIndex ? "你" : playerNamesBySeat.get(seat) || "对手");
+
+      if (prevGame.phase === "play" && gameState.phase === "draw" && prevGame.turn === gameState.turn) {
+        const actorSeat = gameState.turn;
+        pushToast(`${actorName(actorSeat)}${describePlayAction(prevGame, gameState, actorSeat, playerIndex)}`);
+      } else if (prevGame.phase === "draw" && gameState.phase === "play" && prevGame.turn !== gameState.turn) {
+        const actorSeat = prevGame.turn;
+        pushToast(`${actorName(actorSeat)}${describeDrawAction(prevGame, gameState)}`);
+      }
+    }
+    prevGameRef.current = gameState;
+  }, [gameState, roomState, playerIndex, pushToast]);
 
   const canPlay = isMyTurn && gameState?.phase === "play";
 
@@ -244,13 +351,20 @@ export default function App() {
                 </span>
               </div>
               <div className={`info-chip header-chip header-score ${isMyTurn ? "highlight" : ""}`}>
-                总分 你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]} · 本局 你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}
+                {myName} vs {opponentName} · 总分 你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]} · 本局 你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}
               </div>
             </div>
           )}
           <div className="badge">{connected ? "已连接" : "未连接"}</div>
         </div>
       </header>
+      {toasts.length > 0 && (
+        <div className="toast-stack" role="status" aria-live="polite">
+          {toasts.map((toast) => (
+            <div key={toast.id} className="toast-item">{toast.text}</div>
+          ))}
+        </div>
+      )}
 
       <main>
         {!roomState && (
@@ -366,7 +480,7 @@ export default function App() {
             <div className="felt-surface">
               <div className="table-area">
                 <section className="table-zone">
-                  <h3>对手探险列</h3>
+                  <h3>对手探险列 · {opponentName}</h3>
                   {COLORS.map((color) => {
                     const opponentExpedition = gameState.opponent.expeditions[color.id];
                     const opponentColorScore = scoreExpedition(opponentExpedition);
@@ -418,7 +532,7 @@ export default function App() {
                 </section>
 
                 <section className="table-zone">
-                  <h3>你的探险列</h3>
+                  <h3>你的探险列 · {myName}</h3>
                   {COLORS.map((color) => {
                     const yourExpedition = gameState.your.expeditions[color.id];
                     const yourColorScore = scoreExpedition(yourExpedition);
@@ -442,7 +556,7 @@ export default function App() {
               </div>
 
               <div className="stack hand-zone">
-                <h3>你的手牌</h3>
+                <h3>你的手牌 · {myName}</h3>
                 <div className="hand">
                   {sortedHand.map((card) => (
                     <HandCard

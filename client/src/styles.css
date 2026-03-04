@@ -565,6 +565,29 @@ main {
   color: var(--gold);
 }
 
+.toast-stack {
+  position: fixed;
+  top: 82px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  width: min(460px, calc(100vw - 24px));
+  z-index: 20;
+  pointer-events: none;
+}
+
+.toast-item {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(202, 162, 90, 0.45);
+  background: rgba(18, 32, 24, 0.92);
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+  text-align: center;
+}
+
 @media (max-width: 900px) {
   main {
     padding: 16px;
@@ -620,6 +643,10 @@ main {
   .lobby-shell {
     grid-template-columns: 1fr;
   }
+
+  .toast-stack {
+    top: 74px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -653,5 +680,14 @@ main {
   .hand .card {
     flex-basis: calc(25% - 6px);
     min-width: 72px;
+  }
+
+  .toast-stack {
+    top: 68px;
+  }
+
+  .toast-item {
+    font-size: 13px;
+    text-align: left;
   }
 }
