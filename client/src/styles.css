@@ -64,10 +64,10 @@ header h1 {
 
 .header-meta {
   display: grid;
-  grid-template-columns: minmax(210px, auto);
+  grid-template-columns: minmax(210px, auto) minmax(360px, 1fr);
   align-items: center;
   gap: 10px;
-  width: min(320px, 100%);
+  width: min(900px, 100%);
   min-width: 0;
 }
 
@@ -75,40 +75,11 @@ header h1 {
   margin: 0;
 }
 
-.floating-score {
-  position: fixed;
-  top: 96px;
-  right: 24px;
-  width: min(320px, calc(100vw - 32px));
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(202, 162, 90, 0.45);
-  background: rgba(20, 36, 27, 0.82);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-  z-index: 8;
-  pointer-events: none;
-}
-
-.floating-score-title {
-  font-family: "Cinzel", serif;
-  color: var(--gold);
-  font-size: 14px;
-  margin-bottom: 8px;
-  letter-spacing: 1px;
-}
-
-.floating-score-line {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
+.header-score {
+  text-align: center;
   white-space: nowrap;
-}
-
-.floating-score-line + .floating-score-line {
-  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 button {
@@ -623,13 +594,9 @@ main {
     grid-template-columns: 1fr;
   }
 
-  .floating-score {
-    top: auto;
-    bottom: 12px;
-    right: 12px;
-    left: 12px;
-    width: auto;
-    max-width: 420px;
+  .header-score {
+    text-align: center;
+    white-space: normal;
   }
 
   .table-zone,

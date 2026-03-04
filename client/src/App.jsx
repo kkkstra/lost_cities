@@ -245,24 +245,14 @@ export default function App() {
                   {gameState.roundIndex}/{gameState.roundsTotal === 0 ? "∞" : gameState.roundsTotal}
                 </span>
               </div>
+              <div className={`info-chip header-chip header-score ${isMyTurn ? "highlight" : ""}`}>
+                总分 你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]} · 本局 你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}
+              </div>
             </div>
           )}
           <div className="badge">{connected ? "已连接" : "未连接"}</div>
         </div>
       </header>
-      {roomState && gameState && (
-        <aside className={`floating-score ${isMyTurn ? "highlight" : ""}`}>
-          <div className="floating-score-title">比分</div>
-          <div className="floating-score-line">
-            <span>总分</span>
-            <strong>你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]}</strong>
-          </div>
-          <div className="floating-score-line">
-            <span>本局</span>
-            <strong>你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}</strong>
-          </div>
-        </aside>
-      )}
 
       <main>
         {!roomState && (
