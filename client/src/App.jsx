@@ -89,11 +89,21 @@ function sortHand(cards) {
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
+  const isLocalHost = defaultHost === "localhost" || defaultHost === "127.0.0.1";
+  const defaultPort =
+    typeof window !== "undefined" && window.location.port
+      ? window.location.port
+      : isLocalHost
+        ? "8080"
+        : "";
   const [activeHost, setActiveHost] = useState(defaultHost);
-  const [activePort, setActivePort] = useState("8080");
+  const [activePort, setActivePort] = useState(defaultPort);
   const [pendingHost, setPendingHost] = useState(defaultHost);
-  const [pendingPort, setPendingPort] = useState("8080");
-  const serverUrl = useMemo(() => `${socketProtocol}://${activeHost}:${activePort}`, [socketProtocol, activeHost, activePort]);
+  const [pendingPort, setPendingPort] = useState(defaultPort);
+  const serverUrl = useMemo(() => {
+    const portPart = activePort ? `:${activePort}` : "";
+    return `${socketProtocol}://${activeHost}${portPart}/ws/`;
+  }, [socketProtocol, activeHost, activePort]);
   const { socket, connected } = useSocket(serverUrl);
   const [roomState, setRoomState] = useState(null);
   const [gameState, setGameState] = useState(null);
@@ -257,7 +267,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     const host = pendingHost.trim() || defaultHost;
-                    const port = pendingPort.trim() || "8080";
+                    const port = pendingPort.trim();
                     setActiveHost(host);
                     setActivePort(port);
                   }}
