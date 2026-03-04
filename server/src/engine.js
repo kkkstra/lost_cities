@@ -92,7 +92,24 @@ function scoreAll(expeditions) {
   return { scores, total };
 }
 
-function createRoundState() {
+function calcMatchWins(history) {
+  const wins = [0, 0];
+  for (const round of history || []) {
+    const score0 = round?.scores?.[0] ?? 0;
+    const score1 = round?.scores?.[1] ?? 0;
+    if (score0 > score1) wins[0] += 1;
+    if (score1 > score0) wins[1] += 1;
+  }
+  return wins;
+}
+
+function roundWinner(score0, score1) {
+  if (score0 > score1) return 0;
+  if (score1 > score0) return 1;
+  return -1;
+}
+
+function createRoundState(startingPlayer = 0) {
   const deck = createDeck();
   const [handA, handB] = dealHands(deck);
   return {
@@ -100,7 +117,8 @@ function createRoundState() {
     discardPiles: createEmptyDiscards(),
     hands: [handA, handB],
     expeditions: [createEmptyExpeditions(), createEmptyExpeditions()],
-    turn: 0,
+    turn: startingPlayer,
+    startingPlayer,
     phase: "play",
     lastDiscard: null,
     finished: false
@@ -111,9 +129,10 @@ function createGameState(roundsTotal = 3) {
   return {
     roundsTotal,
     roundIndex: 1,
-    round: createRoundState(),
+    round: createRoundState(0),
     scores: [0, 0],
-    history: []
+    history: [],
+    roundResult: null
   };
 }
 
@@ -124,6 +143,7 @@ function isGameOver(state) {
 function getPlayerView(state, playerIndex) {
   const opponent = playerIndex === 0 ? 1 : 0;
   const round = state.round;
+  const matchWins = calcMatchWins(state.history);
   const roundScores = [
     scoreAll(round.expeditions[0]).total,
     scoreAll(round.expeditions[1]).total
@@ -133,8 +153,20 @@ function getPlayerView(state, playerIndex) {
     roundsTotal: state.roundsTotal,
     roundIndex: state.roundIndex,
     scores: state.scores,
+    matchWins,
     history: state.history,
     roundScores,
+    roundResult: state.roundResult
+      ? {
+          roundIndex: state.roundResult.roundIndex,
+          scores: state.roundResult.scores,
+          winner: state.roundResult.winner,
+          matchWins: state.roundResult.matchWins,
+          canContinue: state.roundResult.canContinue,
+          readyCount: state.roundResult.ready.length,
+          youReady: state.roundResult.ready.includes(playerIndex)
+        }
+      : null,
     gameOver: isGameOver(state),
     turn: round.turn,
     phase: round.phase,
@@ -158,6 +190,26 @@ function getPlayerView(state, playerIndex) {
 
 function applyAction(state, playerIndex, action) {
   const round = state.round;
+  if (action.type === "continue_round") {
+    if (!state.roundResult || !state.roundResult.canContinue) {
+      return { ok: false, error: "No round to continue" };
+    }
+    if (!state.roundResult.ready.includes(playerIndex)) {
+      state.roundResult.ready.push(playerIndex);
+    }
+    if (state.roundResult.ready.length < 2) {
+      return { ok: true };
+    }
+    const nextStarter = state.round?.startingPlayer === 0 ? 1 : 0;
+    state.roundIndex += 1;
+    state.round = createRoundState(nextStarter);
+    state.roundResult = null;
+    return { ok: true };
+  }
+
+  if (state.roundResult?.canContinue) {
+    return { ok: false, error: "Waiting players to continue" };
+  }
   if (round.finished) return { ok: false, error: "Round finished" };
   if (round.turn !== playerIndex) return { ok: false, error: "Not your turn" };
   if (action.type === "play_card") {
@@ -218,12 +270,14 @@ function applyAction(state, playerIndex, action) {
         roundIndex: state.roundIndex,
         scores: [score0, score1]
       });
-      if (state.roundIndex < state.roundsTotal) {
-        const nextStarter = state.scores[0] >= state.scores[1] ? 0 : 1;
-        state.roundIndex += 1;
-        state.round = createRoundState();
-        state.round.turn = nextStarter;
-      }
+      state.roundResult = {
+        roundIndex: state.roundIndex,
+        scores: [score0, score1],
+        winner: roundWinner(score0, score1),
+        matchWins: calcMatchWins(state.history),
+        canContinue: state.roundIndex < state.roundsTotal,
+        ready: []
+      };
     }
 
     return { ok: true };

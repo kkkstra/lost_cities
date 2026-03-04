@@ -45,10 +45,10 @@ function Card({ card, onClick, selectable }) {
   );
 }
 
-function HandCard({ card, onSelect, active }) {
+function HandCard({ card, onSelect, active, selected }) {
   const colorClass = `color-${card.color}`;
   return (
-    <div className={`card ${card.color} ${colorClass} ${active ? "selectable" : ""}`} onClick={onSelect}>
+    <div className={`card ${card.color} ${colorClass} ${active ? "selectable" : ""} ${selected ? "selected" : ""}`} onClick={onSelect}>
       <div className="label">{card.type === "wager" ? "投资" : "探险"}</div>
       <div className="value">{card.type === "wager" ? "×" : card.value}</div>
     </div>
@@ -163,6 +163,21 @@ function formatActionTime() {
   });
 }
 
+function mapServerError(message) {
+  const text = typeof message === "string" ? message.trim() : "";
+  const dict = {
+    "Invalid expedition play": "该牌不能这样打到探险列",
+    "Not your turn": "还没轮到你操作",
+    "Must play before drawing": "请先出牌再抽牌",
+    "Card not in hand": "这张牌不在你的手牌中",
+    "Discard empty": "该弃牌堆为空",
+    "Cannot draw your just-discarded card": "不能立刻抽回你刚弃掉的牌",
+    "Waiting players to continue": "请等待双方点击继续",
+    "No round to continue": "当前没有可继续的下一局"
+  };
+  return dict[text] || text || "未知错误";
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -195,7 +210,8 @@ export default function App() {
   const [showGameMenu, setShowGameMenu] = useState(false);
   const [showActionHistory, setShowActionHistory] = useState(false);
   const [actionHistory, setActionHistory] = useState([]);
-  const [roundResultModal, setRoundResultModal] = useState(null);
+  const [roundContinueSent, setRoundContinueSent] = useState(false);
+  const [roundResultSeenKey, setRoundResultSeenKey] = useState("");
   const [roundsTotal, setRoundsTotal] = useState("3");
   const [copied, setCopied] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -212,7 +228,6 @@ export default function App() {
   const nextActionHistoryIdRef = useRef(1);
   const prevRoomRef = useRef(null);
   const prevGameRef = useRef(null);
-  const prevHistoryLenRef = useRef(0);
 
   const playerIndex = roomState?.playerIndex ?? -1;
   const myPlayer = roomState?.players?.find((p) => p.id === roomState.you) || null;
@@ -224,7 +239,21 @@ export default function App() {
   const opponentName = opponentPlayer?.name || "等待对手";
   const isMyTurn = gameState && gameState.turn === playerIndex;
   const roundHistory = gameState?.history || [];
-  const matchWins = useMemo(() => calcMatchWins(roundHistory, playerIndex === -1 ? 0 : playerIndex), [roundHistory, playerIndex]);
+  const roundResult = gameState?.roundResult || null;
+  const roundPendingContinue = !!roundResult?.canContinue;
+  const roundResultKey = roundResult
+    ? `${roundResult.roundIndex}:${roundResult.scores?.[0] ?? 0}:${roundResult.scores?.[1] ?? 0}`
+    : "";
+  const showRoundResultModal = !!roundResult && (roundResult.canContinue || roundResultSeenKey !== roundResultKey);
+  const matchWins = useMemo(() => {
+    if (Array.isArray(gameState?.matchWins) && playerIndex !== -1) {
+      return {
+        you: gameState.matchWins[playerIndex] ?? 0,
+        opponent: gameState.matchWins[playerIndex === 0 ? 1 : 0] ?? 0
+      };
+    }
+    return calcMatchWins(roundHistory, playerIndex === -1 ? 0 : playerIndex);
+  }, [gameState?.matchWins, roundHistory, playerIndex]);
   const liveRoundScores = useMemo(() => {
     if (!gameState) return null;
     return {
@@ -232,6 +261,24 @@ export default function App() {
       opponent: scoreAll(gameState.opponent.expeditions)
     };
   }, [gameState]);
+  const roundResultWinnerText = useMemo(() => {
+    if (!roundResult) return "";
+    if (roundResult.winner === -1) return "本局平局";
+    if (roundResult.winner === playerIndex) return `${myName} 赢下本局`;
+    return `${opponentName} 赢下本局`;
+  }, [roundResult, playerIndex, myName, opponentName]);
+  const roundResultMyScore = roundResult && playerIndex !== -1 ? (roundResult.scores?.[playerIndex] ?? 0) : 0;
+  const roundResultOpponentScore =
+    roundResult && playerIndex !== -1 ? (roundResult.scores?.[playerIndex === 0 ? 1 : 0] ?? 0) : 0;
+  const roundResultMatchWins = useMemo(() => {
+    if (roundResult && Array.isArray(roundResult.matchWins) && playerIndex !== -1) {
+      return {
+        you: roundResult.matchWins[playerIndex] ?? 0,
+        opponent: roundResult.matchWins[playerIndex === 0 ? 1 : 0] ?? 0
+      };
+    }
+    return matchWins;
+  }, [roundResult, matchWins, playerIndex]);
   const sortedHand = useMemo(() => sortHand(gameState?.your.hand), [gameState?.your.hand]);
   const pushToast = useCallback((text) => {
     if (!text) return;
@@ -267,12 +314,14 @@ export default function App() {
         }
       }
       if (msg.type === "error") {
-        setMessage(msg.payload?.message || "未知错误");
+        const errorText = mapServerError(msg.payload?.message);
+        setMessage(errorText);
+        pushToast(errorText);
       }
     };
     socket.addEventListener("message", handler);
     return () => socket.removeEventListener("message", handler);
-  }, [socket]);
+  }, [socket, pushToast]);
 
   useEffect(() => {
     if (gameState?.phase === "draw") {
@@ -294,7 +343,13 @@ export default function App() {
     setShowGameMenu(false);
     setShowActionHistory(false);
     setActionHistory([]);
+    setRoundContinueSent(false);
+    setRoundResultSeenKey("");
   }, [roomState]);
+
+  useEffect(() => {
+    setRoundContinueSent(false);
+  }, [roundResultKey]);
 
   useEffect(() => () => {
     for (const timer of toastTimersRef.current.values()) {
@@ -337,6 +392,7 @@ export default function App() {
       ) {
         pushToast("对局已重新开始");
         setActionHistory([]);
+        setRoundResultSeenKey("");
         pushActionHistory("对局已重新开始");
         prevGameRef.current = gameState;
         return;
@@ -360,36 +416,7 @@ export default function App() {
     prevGameRef.current = gameState;
   }, [gameState, roomState, playerIndex, pushToast, pushActionHistory]);
 
-  useEffect(() => {
-    const history = gameState?.history || [];
-    if (!gameState || !roomState || playerIndex === -1) {
-      prevHistoryLenRef.current = history.length;
-      return;
-    }
-
-    const prevLen = prevHistoryLenRef.current;
-    if (history.length > prevLen) {
-      const latest = history[history.length - 1];
-      const myRoundScore = latest?.scores?.[playerIndex] ?? 0;
-      const opponentRoundScore = latest?.scores?.[playerIndex === 0 ? 1 : 0] ?? 0;
-      const latestWins = calcMatchWins(history, playerIndex);
-      let winnerText = "本局平局";
-      if (myRoundScore > opponentRoundScore) {
-        winnerText = `${myName} 赢下本局`;
-      } else if (myRoundScore < opponentRoundScore) {
-        winnerText = `${opponentName} 赢下本局`;
-      }
-      setRoundResultModal({
-        winnerText,
-        myRoundScore,
-        opponentRoundScore,
-        matchScoreText: `当前比分 ${myName} ${latestWins.you} : ${latestWins.opponent} ${opponentName}`
-      });
-    }
-    prevHistoryLenRef.current = history.length;
-  }, [gameState, roomState, playerIndex, myName, opponentName]);
-
-  const canPlay = hasTwoPlayers && isMyTurn && gameState?.phase === "play";
+  const canPlay = hasTwoPlayers && !roundPendingContinue && isMyTurn && gameState?.phase === "play";
 
   const send = (type, payload) => {
     if (!socket || socket.readyState !== socket.OPEN) return;
@@ -424,7 +451,8 @@ export default function App() {
   const leaveRoom = () => {
     setShowGameMenu(false);
     setShowActionHistory(false);
-    setRoundResultModal(null);
+    setRoundContinueSent(false);
+    setRoundResultSeenKey("");
     setActionHistory([]);
     setRoomState(null);
     setGameState(null);
@@ -435,7 +463,6 @@ export default function App() {
     setReconnectCode("");
     prevRoomRef.current = null;
     prevGameRef.current = null;
-    prevHistoryLenRef.current = 0;
     nextActionHistoryIdRef.current = 1;
     localStorage.removeItem("lostcities-token");
     localStorage.removeItem("lostcities-code");
@@ -443,15 +470,21 @@ export default function App() {
     pushToast("已退出房间");
   };
 
+  const continueRound = () => {
+    if (!roundResult?.canContinue || roundContinueSent) return;
+    send("game:action", { type: "continue_round" });
+    setRoundContinueSent(true);
+  };
+
   const playCard = (target) => {
-    if (!hasTwoPlayers) return;
+    if (!hasTwoPlayers || roundPendingContinue) return;
     if (!selectedCardId) return;
     send("game:action", { type: "play_card", payload: { cardId: selectedCardId, target } });
     setSelectedCardId(null);
   };
 
   const drawCard = (source, color) => {
-    if (!hasTwoPlayers) return;
+    if (!hasTwoPlayers || roundPendingContinue) return;
     send("game:action", { type: "draw_card", payload: { source, color } });
   };
 
@@ -520,14 +553,27 @@ export default function App() {
           ))}
         </div>
       )}
-      {roundResultModal && (
-        <div className="modal-backdrop" onClick={() => setRoundResultModal(null)}>
+      {showRoundResultModal && (
+        <div
+          className="modal-backdrop result-backdrop"
+          onClick={() => {
+            if (!roundResult?.canContinue) {
+              setRoundResultSeenKey(roundResultKey);
+            }
+          }}
+        >
           <div className="modal result-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{roundResultModal.winnerText}</h3>
-            <div className="notice">本局分数 你 {roundResultModal.myRoundScore} : 对手 {roundResultModal.opponentRoundScore}</div>
-            <div className="notice">{roundResultModal.matchScoreText}</div>
+            <h3>{roundResultWinnerText}</h3>
+            <div className="notice">本局分数 你 {roundResultMyScore} : 对手 {roundResultOpponentScore}</div>
+            <div className="notice">当前比分(赢局) {myName} {roundResultMatchWins.you} : {roundResultMatchWins.opponent} {opponentName}</div>
             <div className="modal-actions">
-              <button onClick={() => setRoundResultModal(null)}>继续</button>
+              {roundResult?.canContinue ? (
+                <button onClick={continueRound} disabled={roundContinueSent}>
+                  {roundContinueSent ? `已继续，等待对方… (${roundResult.readyCount ?? 1}/2)` : "继续"}
+                </button>
+              ) : (
+                <button onClick={() => setRoundResultSeenKey(roundResultKey)}>知道了</button>
+              )}
             </div>
           </div>
         </div>
@@ -793,7 +839,11 @@ export default function App() {
                       key={card.id}
                       card={card}
                       active={canPlay}
-                      onSelect={() => canPlay && setSelectedCardId(card.id)}
+                      selected={selectedCardId === card.id}
+                      onSelect={() => {
+                        if (!canPlay) return;
+                        setSelectedCardId((prev) => (prev === card.id ? null : card.id));
+                      }}
                     />
                   ))}
                 </div>

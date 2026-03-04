@@ -284,6 +284,10 @@ main {
   width: min(420px, 90vw);
 }
 
+.result-backdrop {
+  z-index: 26;
+}
+
 .waiting-backdrop {
   z-index: 24;
 }
@@ -373,6 +377,16 @@ main {
 
 .card.selectable:hover {
   transform: translateY(-4px);
+}
+
+.hand .card.selected {
+  transform: translateY(-8px);
+  box-shadow: 0 0 0 2px rgba(202, 162, 90, 0.78), 0 16px 26px rgba(0, 0, 0, 0.5);
+  z-index: 3;
+}
+
+.hand .card.selected:hover {
+  transform: translateY(-8px);
 }
 
 .card.red { border-color: #b5443b; }
@@ -501,13 +515,23 @@ main {
 
 .pile-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(58px, 72px));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   justify-content: center;
-  gap: 10px;
+  gap: clamp(6px, 0.8vw, 10px);
 }
 
 .pile-grid .card.small {
   width: 100%;
+  min-height: clamp(46px, 5.2vw, 58px);
+  padding: clamp(6px, 0.8vw, 10px);
+}
+
+.pile-grid .card.small .label {
+  font-size: clamp(10px, 1.05vw, 12px);
+}
+
+.pile-grid .card.small .value {
+  font-size: clamp(16px, 1.7vw, 20px);
 }
 
 .deck-pile {
@@ -758,6 +782,49 @@ main {
   font-size: 13px;
   background: rgba(247, 241, 230, 0.05);
   border: 1px dashed rgba(247, 241, 230, 0.2);
+}
+
+@media (max-width: 1280px) and (min-width: 901px) {
+  header {
+    padding: 22px 24px 14px;
+  }
+
+  header h1 {
+    font-size: 30px;
+    letter-spacing: 1.2px;
+  }
+
+  .header-meta {
+    width: min(760px, 100%);
+    grid-template-columns: minmax(190px, auto) minmax(260px, 1fr);
+  }
+
+  main {
+    padding: 24px 24px 40px;
+  }
+
+  .table-area {
+    grid-template-columns: minmax(180px, 0.95fr) minmax(220px, 1.12fr) minmax(180px, 0.95fr);
+    gap: 12px;
+  }
+
+  .table-zone,
+  .hand-zone {
+    padding: 12px;
+  }
+
+  .center-piles {
+    width: min(100%, 330px);
+    gap: 12px;
+  }
+
+  .deck-pile {
+    width: min(100%, 250px);
+  }
+
+  .expedition-cards .card.small + .card.small {
+    margin-left: -26px;
+  }
 }
 
 @media (max-width: 900px) {
