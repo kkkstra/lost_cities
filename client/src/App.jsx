@@ -236,6 +236,29 @@ async function copyText(text) {
   return copyTextByExecCommand(value);
 }
 
+function normalizeRoomCode(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, "")
+    .slice(0, 4);
+}
+
+function getInviteCodeFromUrl() {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  return normalizeRoomCode(params.get("invite") || "");
+}
+
+function buildInviteLink(roomCode) {
+  if (typeof window === "undefined") return "";
+  const code = normalizeRoomCode(roomCode);
+  if (!code) return "";
+  const url = new URL(window.location.href);
+  url.searchParams.set("invite", code);
+  return url.toString();
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -259,9 +282,9 @@ export default function App() {
   const [roomState, setRoomState] = useState(null);
   const [gameState, setGameState] = useState(null);
   const [name, setName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
+  const [roomCode, setRoomCode] = useState(() => getInviteCodeFromUrl());
+  const [invitedRoomCode, setInvitedRoomCode] = useState(() => getInviteCodeFromUrl());
   const [selectedCardId, setSelectedCardId] = useState(null);
-  const [message, setMessage] = useState("");
   const [phaseAction, setPhaseAction] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -272,6 +295,7 @@ export default function App() {
   const [roundResultSeenKey, setRoundResultSeenKey] = useState("");
   const [roundsTotal, setRoundsTotal] = useState("3");
   const [copied, setCopied] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [reconnectToken, setReconnectToken] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -286,6 +310,7 @@ export default function App() {
   const nextActionHistoryIdRef = useRef(1);
   const prevRoomRef = useRef(null);
   const prevGameRef = useRef(null);
+  const invitePromptedRef = useRef(false);
 
   const playerIndex = roomState?.playerIndex ?? -1;
   const myPlayer = roomState?.players?.find((p) => p.id === roomState.you) || null;
@@ -373,7 +398,6 @@ export default function App() {
       }
       if (msg.type === "error") {
         const errorText = mapServerError(msg.payload?.message);
-        setMessage(errorText);
         pushToast(errorText);
       }
     };
@@ -395,6 +419,29 @@ export default function App() {
     localStorage.setItem("lostcities-code", roomState.code);
     setReconnectCode(roomState.code);
   }, [roomState?.code]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const updateInviteFromUrl = () => {
+      const code = getInviteCodeFromUrl();
+      setInvitedRoomCode(code);
+      if (!roomState && code) {
+        setRoomCode(code);
+      }
+    };
+    updateInviteFromUrl();
+    window.addEventListener("popstate", updateInviteFromUrl);
+    return () => window.removeEventListener("popstate", updateInviteFromUrl);
+  }, [roomState]);
+
+  useEffect(() => {
+    if (!invitedRoomCode || roomState || invitePromptedRef.current) return;
+    setShowJoinModal(true);
+    setShowCreateModal(false);
+    setRoomCode(invitedRoomCode);
+    pushToast("这是邀请链接，请设置昵称后加入房间");
+    invitePromptedRef.current = true;
+  }, [invitedRoomCode, roomState, pushToast]);
 
   useEffect(() => {
     if (roomState) return;
@@ -490,20 +537,29 @@ export default function App() {
       pushToast("房间号已复制");
       return;
     }
-    const failText = "复制失败，请手动复制房间号";
-    setMessage(failText);
-    pushToast(failText);
+    pushToast("复制失败，请手动复制房间号");
+  }, [roomState?.code, pushToast]);
+
+  const copyInviteLink = useCallback(async () => {
+    const code = roomState?.code;
+    if (!code) return;
+    const inviteLink = buildInviteLink(code);
+    const ok = await copyText(inviteLink);
+    if (ok) {
+      setInviteCopied(true);
+      pushToast("邀请链接已复制");
+      return;
+    }
+    pushToast("邀请链接复制失败，请手动复制");
   }, [roomState?.code, pushToast]);
 
   const createRoom = () => {
-    setMessage("");
     send("room:create", { name: name || "Guest", roundsTotal });
   };
 
   const joinRoom = () => {
-    setMessage("");
     if (!roomCode) {
-      setMessage("请输入房间码");
+      pushToast("请输入房间码");
       return;
     }
     send("room:join", { code: roomCode.trim().toUpperCase(), name: name || "Guest" });
@@ -530,7 +586,6 @@ export default function App() {
     setGameState(null);
     setSelectedCardId(null);
     setPhaseAction(null);
-    setMessage("");
     setReconnectToken("");
     setReconnectCode("");
     prevRoomRef.current = null;
@@ -571,6 +626,12 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [copied]);
 
+  useEffect(() => {
+    if (!inviteCopied) return undefined;
+    const timer = setTimeout(() => setInviteCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [inviteCopied]);
+
   return (
     <div>
       <header>
@@ -586,6 +647,13 @@ export default function App() {
                   title="复制房间号"
                 >
                   {copied ? "已复制" : "复制"}
+                </button>
+                <button
+                  className="chip-action"
+                  onClick={copyInviteLink}
+                  title="复制邀请链接"
+                >
+                  {inviteCopied ? "链接已复制" : "邀请链接"}
                 </button>
                 <span className="chip-meta">
                   {gameState.roundIndex}/{gameState.roundsTotal === 0 ? "∞" : gameState.roundsTotal}
@@ -659,6 +727,13 @@ export default function App() {
                 title="复制房间号"
               >
                 {copied ? "已复制" : "复制"}
+              </button>
+              <button
+                className="chip-action"
+                onClick={copyInviteLink}
+                title="复制邀请链接"
+              >
+                {inviteCopied ? "链接已复制" : "邀请链接"}
               </button>
             </div>
             <div className="notice">当前 {connectedPlayersCount}/2 人，双方进入后自动开始游戏。</div>
@@ -791,6 +866,9 @@ export default function App() {
               <div className="modal-backdrop" onClick={() => setShowJoinModal(false)}>
                 <div className="modal" onClick={(e) => e.stopPropagation()}>
                   <h3>加入房间</h3>
+                  {invitedRoomCode && (
+                    <div className="notice">邀请房间号：{invitedRoomCode}</div>
+                  )}
                   <label>
                     昵称
                     <input
@@ -799,14 +877,16 @@ export default function App() {
                       onChange={(e) => setName(e.target.value)}
                     />
                   </label>
-                  <label>
-                    房间码
-                    <input
-                      placeholder="输入房间码"
-                      value={roomCode}
-                      onChange={(e) => setRoomCode(e.target.value)}
-                    />
-                  </label>
+                  {!invitedRoomCode && (
+                    <label>
+                      房间码
+                      <input
+                        placeholder="输入房间码"
+                        value={roomCode}
+                        onChange={(e) => setRoomCode(e.target.value)}
+                      />
+                    </label>
+                  )}
                   <div className="modal-actions">
                     <button onClick={joinRoom}>加入</button>
                     <button className="secondary" onClick={() => setShowJoinModal(false)}>取消</button>
@@ -924,7 +1004,6 @@ export default function App() {
                 )}
                 {gameState.gameOver && <div className="notice">比赛结束！最终得分已结算。</div>}
                 {!isMyTurn && <div className="notice">等待对手操作…</div>}
-                {message && <div className="notice">{message}</div>}
               </div>
             </div>
           </div>
