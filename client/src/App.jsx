@@ -40,7 +40,6 @@ function Card({ card, onClick, selectable }) {
       onClick={selectable ? onClick : undefined}
     >
       <div className="label">{label}</div>
-      <div className="ribbon" />
       <div className="value">{card.type === "wager" ? "×" : card.value}</div>
     </div>
   );
@@ -51,7 +50,6 @@ function HandCard({ card, onSelect, active }) {
   return (
     <div className={`card ${card.color} ${colorClass} ${active ? "selectable" : ""}`} onClick={onSelect}>
       <div className="label">{card.type === "wager" ? "投资" : "探险"}</div>
-      <div className="ribbon" />
       <div className="value">{card.type === "wager" ? "×" : card.value}</div>
     </div>
   );
