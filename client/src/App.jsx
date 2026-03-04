@@ -12,6 +12,62 @@ const COLOR_ORDER = COLORS.reduce((acc, color, index) => {
   return acc;
 }, {});
 
+const RULE_SECTIONS = [
+  {
+    title: "基本信息",
+    items: [
+      "双人对战，使用五种颜色进行探险。",
+      "基础牌组共 60 张：探险牌（2-10）与投资牌。"
+    ]
+  },
+  {
+    title: "开局准备",
+    items: [
+      "洗牌后每人 8 张手牌，其余作为抽牌堆。",
+      "每种颜色各有一个弃牌堆位。"
+    ]
+  },
+  {
+    title: "你的回合",
+    items: [
+      "每回合必须先出牌，再抽牌。",
+      "出牌只能二选一：打入自己探险列，或弃到对应颜色弃牌堆。",
+      "抽牌可从牌堆顶，或任一颜色弃牌堆顶抽 1 张。"
+    ]
+  },
+  {
+    title: "探险列限制",
+    items: [
+      "同色牌必须按点数严格递增。",
+      "投资牌只能放在该色探险列前端（点数牌之前）。",
+      "打出点数牌后，不能再补该色投资牌。"
+    ]
+  },
+  {
+    title: "抽牌限制",
+    items: [
+      "不能抽回自己本回合刚弃掉的那张同色牌。",
+      "抽牌后回合立刻结束。"
+    ]
+  },
+  {
+    title: "计分规则",
+    items: [
+      "每种颜色单独结算：点数和 - 20。",
+      "有 1/2/3 张投资牌时，分别乘以 2/3/4。",
+      "该颜色探险列若达到 8 张及以上，额外 +20 分。",
+      "未开始的颜色不计分。"
+    ]
+  },
+  {
+    title: "结束与胜负",
+    items: [
+      "当抽牌堆被抽空时，本小局结束。",
+      "通常进行多小局，按约定规则累计后分出胜负。"
+    ]
+  }
+];
+
 function useSocket(url) {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -288,6 +344,7 @@ export default function App() {
   const [phaseAction, setPhaseAction] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
   const [showActionHistory, setShowActionHistory] = useState(false);
   const [actionHistory, setActionHistory] = useState([]);
@@ -690,6 +747,28 @@ export default function App() {
           ))}
         </div>
       )}
+      {showRulesModal && (
+        <div className="modal-backdrop rules-backdrop" onClick={() => setShowRulesModal(false)}>
+          <div className="modal rules-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>游戏规则</h3>
+            <div className="rules-content">
+              {RULE_SECTIONS.map((section) => (
+                <section key={section.title} className="rules-section">
+                  <h4>{section.title}</h4>
+                  <ul>
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowRulesModal(false)}>我知道了</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showRoundResultModal && (
         <div
           className="modal-backdrop result-backdrop"
@@ -785,11 +864,11 @@ export default function App() {
 
       <main>
         {!roomState && (
-          <div className="lobby-shell">
+            <div className="lobby-shell">
             <div className="lobby-hero">
               <h2>探索失落的文明</h2>
               <p>两人对战，五条探险路线。用策略押注与出牌，赢得更高的探险收益。</p>
-              <div className="notice">实时联机 · 房间码对战 · 3 局累计</div>
+              <button className="secondary" onClick={() => setShowRulesModal(true)}>游戏规则</button>
             </div>
             <div className="panel lobby-actions">
               <div className="room-card">
