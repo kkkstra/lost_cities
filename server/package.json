@@ -1,0 +1,13 @@
+{
+  "name": "lost-cities-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "nanoid": "^5.0.7",
+    "ws": "^8.16.0"
+  }
+}
