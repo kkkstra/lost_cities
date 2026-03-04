@@ -217,6 +217,9 @@ export default function App() {
   const playerIndex = roomState?.playerIndex ?? -1;
   const myPlayer = roomState?.players?.find((p) => p.id === roomState.you) || null;
   const opponentPlayer = roomState?.players?.find((p) => p.id !== roomState.you) || null;
+  const connectedPlayersCount = roomState?.players?.filter((player) => player.connected !== false).length ?? 0;
+  const hasTwoPlayers = connectedPlayersCount >= 2;
+  const waitingForOpponent = !!roomState && !hasTwoPlayers;
   const myName = myPlayer?.name || "你";
   const opponentName = opponentPlayer?.name || "等待对手";
   const isMyTurn = gameState && gameState.turn === playerIndex;
@@ -386,7 +389,7 @@ export default function App() {
     prevHistoryLenRef.current = history.length;
   }, [gameState, roomState, playerIndex, myName, opponentName]);
 
-  const canPlay = isMyTurn && gameState?.phase === "play";
+  const canPlay = hasTwoPlayers && isMyTurn && gameState?.phase === "play";
 
   const send = (type, payload) => {
     if (!socket || socket.readyState !== socket.OPEN) return;
@@ -441,12 +444,14 @@ export default function App() {
   };
 
   const playCard = (target) => {
+    if (!hasTwoPlayers) return;
     if (!selectedCardId) return;
     send("game:action", { type: "play_card", payload: { cardId: selectedCardId, target } });
     setSelectedCardId(null);
   };
 
   const drawCard = (source, color) => {
+    if (!hasTwoPlayers) return;
     send("game:action", { type: "draw_card", payload: { source, color } });
   };
 
@@ -527,7 +532,28 @@ export default function App() {
           </div>
         </div>
       )}
-      {roomState && gameState && (
+      {waitingForOpponent && (
+        <div className="modal-backdrop waiting-backdrop">
+          <div className="modal waiting-modal">
+            <h3>等待另一位玩家加入</h3>
+            <div className="waiting-room-line">
+              <span className="waiting-room-code">房间号 {roomState.code}</span>
+              <button
+                className="chip-action"
+                onClick={() => {
+                  navigator.clipboard?.writeText(roomState.code);
+                  setCopied(true);
+                }}
+                title="复制房间号"
+              >
+                {copied ? "已复制" : "复制"}
+              </button>
+            </div>
+            <div className="notice">当前 {connectedPlayersCount}/2 人，双方进入后自动开始游戏。</div>
+          </div>
+        </div>
+      )}
+      {roomState && gameState && !waitingForOpponent && (
         <div className="action-history-float">
           {showActionHistory && (
             <aside className="action-history-panel">

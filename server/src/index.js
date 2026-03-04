@@ -22,7 +22,8 @@ function broadcastRoom(room) {
 }
 
 function getRoom(code) {
-  return rooms.get(code);
+  if (!code || typeof code !== "string") return undefined;
+  return rooms.get(code.toUpperCase());
 }
 
 wss.on("connection", (socket) => {
@@ -37,7 +38,10 @@ wss.on("connection", (socket) => {
 
     const { type, payload } = msg || {};
     if (type === "room:create") {
-      const room = createRoom(payload?.roundsTotal);
+      let room = createRoom(payload?.roundsTotal);
+      while (rooms.has(room.code)) {
+        room = createRoom(payload?.roundsTotal);
+      }
       rooms.set(room.code, room);
       const { ok, player, token, error } = addPlayer(room, socket, payload?.name);
       if (!ok) {

@@ -1,8 +1,11 @@
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import { applyAction, createGameState, getPlayerView } from "./engine.js";
 
+const ROOM_CODE_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const createCode = customAlphabet(ROOM_CODE_ALPHABET, 4);
+
 function createRoomCode() {
-  return nanoid(6).toUpperCase();
+  return createCode();
 }
 
 function normalizeRounds(value) {
@@ -57,7 +60,7 @@ export function roomStateFor(room, playerId) {
   const index = room.players.findIndex((p) => p.id === playerId);
   return {
     code: room.code,
-    players: room.players.map((p, i) => ({ id: p.id, name: p.name, seat: i })),
+    players: room.players.map((p, i) => ({ id: p.id, name: p.name, seat: i, connected: !p.disconnectedAt })),
     you: playerId,
     playerIndex: index
   };
@@ -72,6 +75,8 @@ export function gameStateFor(room, playerId) {
 export function handleAction(room, playerId, action) {
   const index = room.players.findIndex((p) => p.id === playerId);
   if (index === -1) return { ok: false, error: "Unknown player" };
+  const connectedPlayers = room.players.filter((player) => !player.disconnectedAt).length;
+  if (connectedPlayers < 2) return { ok: false, error: "Waiting for both players" };
   const result = applyAction(room.state, index, action);
   return result;
 }

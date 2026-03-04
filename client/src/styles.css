@@ -284,6 +284,32 @@ main {
   width: min(420px, 90vw);
 }
 
+.waiting-backdrop {
+  z-index: 24;
+}
+
+.waiting-modal {
+  width: min(560px, 92vw);
+  padding: 30px 24px;
+  text-align: center;
+  gap: 16px;
+}
+
+.waiting-room-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.waiting-room-code {
+  font-size: 20px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
 .modal label {
   display: grid;
   gap: 6px;
