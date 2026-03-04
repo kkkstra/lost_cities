@@ -21,6 +21,14 @@ function broadcastRoom(room) {
   }
 }
 
+function broadcastEvent(room, type, payload) {
+  for (const player of room.players) {
+    const socket = room.sockets.get(player.id);
+    if (!socket || socket.readyState !== socket.OPEN) continue;
+    send(socket, type, payload);
+  }
+}
+
 function getRoom(code) {
   if (!code || typeof code !== "string") return undefined;
   return rooms.get(code.toUpperCase());
@@ -124,6 +132,37 @@ wss.on("connection", (socket) => {
         return;
       }
       broadcastRoom(room);
+      return;
+    }
+
+    if (type === "room:chat") {
+      const meta = socketToPlayer.get(socket);
+      if (!meta) {
+        send(socket, "error", { message: "Not in room" });
+        return;
+      }
+      const room = getRoom(meta.roomCode);
+      if (!room) {
+        send(socket, "error", { message: "Room not found" });
+        return;
+      }
+      const player = room.players.find((p) => p.id === meta.playerId);
+      if (!player) {
+        send(socket, "error", { message: "Unknown player" });
+        return;
+      }
+      const text = String(payload?.text ?? "").trim().slice(0, 120);
+      if (!text) {
+        send(socket, "error", { message: "Empty chat message" });
+        return;
+      }
+      broadcastEvent(room, "room:chat", {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        senderId: player.id,
+        senderName: player.name || "Guest",
+        text,
+        at: Date.now()
+      });
       return;
     }
 

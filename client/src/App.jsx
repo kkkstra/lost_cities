@@ -68,6 +68,15 @@ const RULE_SECTIONS = [
   }
 ];
 
+const QUICK_CHAT_MESSAGES = [
+  "我先想一下这步",
+  "你这步很强",
+  "我准备冲高分了",
+  "这把稳住别急",
+  "最后几张了",
+  "打得漂亮"
+];
+
 function useSocket(url) {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -219,6 +228,16 @@ function formatActionTime() {
   });
 }
 
+function formatChatTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return formatActionTime();
+  return date.toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 function mapServerError(message) {
   const text = typeof message === "string" ? message.trim() : "";
   const dict = {
@@ -229,7 +248,8 @@ function mapServerError(message) {
     "Discard empty": "该弃牌堆为空",
     "Cannot draw your just-discarded card": "不能立刻抽回你刚弃掉的牌",
     "Waiting players to continue": "请等待双方点击继续",
-    "No round to continue": "当前没有可继续的下一局"
+    "No round to continue": "当前没有可继续的下一局",
+    "Empty chat message": "消息不能为空"
   };
   return dict[text] || text || "未知错误";
 }
@@ -347,7 +367,10 @@ export default function App() {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showGameMenu, setShowGameMenu] = useState(false);
   const [showActionHistory, setShowActionHistory] = useState(false);
+  const [showChatPanel, setShowChatPanel] = useState(false);
   const [actionHistory, setActionHistory] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
   const [roundContinueSent, setRoundContinueSent] = useState(false);
   const [roundResultSeenKey, setRoundResultSeenKey] = useState("");
   const [roundsTotal, setRoundsTotal] = useState("3");
@@ -457,10 +480,25 @@ export default function App() {
         const errorText = mapServerError(msg.payload?.message);
         pushToast(errorText);
       }
+      if (msg.type === "room:chat") {
+        const item = msg.payload;
+        if (!item?.text) return;
+        const chatEntry = {
+          id: item.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          senderId: item.senderId || "",
+          senderName: item.senderName || "玩家",
+          text: String(item.text),
+          at: item.at || Date.now()
+        };
+        setChatMessages((prev) => [...prev, chatEntry].slice(-80));
+        if (item.senderId && item.senderId !== roomState?.you) {
+          pushToast(`${chatEntry.senderName}：${chatEntry.text}`);
+        }
+      }
     };
     socket.addEventListener("message", handler);
     return () => socket.removeEventListener("message", handler);
-  }, [socket, pushToast]);
+  }, [socket, pushToast, roomState?.you]);
 
   useEffect(() => {
     if (gameState?.phase === "draw") {
@@ -504,7 +542,10 @@ export default function App() {
     if (roomState) return;
     setShowGameMenu(false);
     setShowActionHistory(false);
+    setShowChatPanel(false);
     setActionHistory([]);
+    setChatMessages([]);
+    setChatInput("");
     setRoundContinueSent(false);
     setRoundResultSeenKey("");
   }, [roomState]);
@@ -636,9 +677,12 @@ export default function App() {
   const leaveRoom = () => {
     setShowGameMenu(false);
     setShowActionHistory(false);
+    setShowChatPanel(false);
     setRoundContinueSent(false);
     setRoundResultSeenKey("");
     setActionHistory([]);
+    setChatMessages([]);
+    setChatInput("");
     setRoomState(null);
     setGameState(null);
     setSelectedCardId(null);
@@ -671,6 +715,16 @@ export default function App() {
     if (!hasTwoPlayers || roundPendingContinue) return;
     send("game:action", { type: "draw_card", payload: { source, color } });
   };
+
+  const sendChatMessage = useCallback((text) => {
+    const normalized = String(text ?? "").trim();
+    if (!normalized) {
+      pushToast("消息不能为空");
+      return;
+    }
+    send("room:chat", { text: normalized });
+    setChatInput("");
+  }, [pushToast, socket]);
 
   const selectedCard = useMemo(() => {
     if (!gameState || !selectedCardId) return null;
@@ -857,6 +911,78 @@ export default function App() {
               <path d="M12 8v5l3 2" />
               <path d="M8 4H4v4" />
               <path d="M4 8a9 9 0 1 0 3-6.7" />
+            </svg>
+          </button>
+        </div>
+      )}
+      {roomState && gameState && (
+        <div className="chat-float">
+          {showChatPanel && (
+            <aside className="chat-panel">
+              <div className="chat-head">
+                <span>消息</span>
+                <button
+                  className="secondary chat-close"
+                  onClick={() => setShowChatPanel(false)}
+                >
+                  关闭
+                </button>
+              </div>
+              <div className="chat-quick-list">
+                {QUICK_CHAT_MESSAGES.map((item) => (
+                  <button
+                    key={item}
+                    className="secondary chat-quick-btn"
+                    onClick={() => sendChatMessage(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+              <div className="chat-list">
+                {chatMessages.length === 0 ? (
+                  <div className="chat-empty">还没有消息</div>
+                ) : (
+                  chatMessages.map((item) => {
+                    const isSelf = item.senderId === roomState?.you;
+                    return (
+                      <div key={item.id} className={`chat-item ${isSelf ? "self" : ""}`}>
+                        <div className="chat-meta">
+                          <span>{isSelf ? "你" : item.senderName}</span>
+                          <span>{formatChatTime(item.at)}</span>
+                        </div>
+                        <div className="chat-text">{item.text}</div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="chat-input-row">
+                <input
+                  placeholder="输入消息"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      sendChatMessage(chatInput);
+                    }
+                  }}
+                />
+                <button onClick={() => sendChatMessage(chatInput)}>发送</button>
+              </div>
+            </aside>
+          )}
+          <button
+            className="chat-fab"
+            onClick={() => setShowChatPanel((prev) => !prev)}
+            title="发送消息"
+            aria-label="发送消息"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v10H7l-3 3z" />
+              <path d="M8 9h8" />
+              <path d="M8 12h5" />
             </svg>
           </button>
         </div>
