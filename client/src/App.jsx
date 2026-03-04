@@ -178,6 +178,64 @@ function mapServerError(message) {
   return dict[text] || text || "未知错误";
 }
 
+function copyTextByExecCommand(text) {
+  if (typeof document === "undefined") return false;
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.top = "0";
+  input.style.left = "0";
+  input.style.width = "1px";
+  input.style.height = "1px";
+  input.style.opacity = "0";
+  input.style.pointerEvents = "none";
+  document.body.appendChild(input);
+
+  const selection = document.getSelection();
+  const originalRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+  input.focus();
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+
+  document.body.removeChild(input);
+  if (selection) {
+    selection.removeAllRanges();
+    if (originalRange) {
+      selection.addRange(originalRange);
+    }
+  }
+  return copied;
+}
+
+async function copyText(text) {
+  const value = String(text ?? "");
+  if (!value) return false;
+
+  const canUseClipboardApi =
+    typeof navigator !== "undefined" &&
+    typeof navigator.clipboard?.writeText === "function" &&
+    (typeof window === "undefined" || window.isSecureContext);
+
+  if (canUseClipboardApi) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // Fallback for browsers/platforms where clipboard API exists but fails at runtime.
+    }
+  }
+  return copyTextByExecCommand(value);
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -423,6 +481,20 @@ export default function App() {
     socket.send(JSON.stringify({ type, payload }));
   };
 
+  const copyRoomCode = useCallback(async () => {
+    const code = roomState?.code;
+    if (!code) return;
+    const ok = await copyText(code);
+    if (ok) {
+      setCopied(true);
+      pushToast("房间号已复制");
+      return;
+    }
+    const failText = "复制失败，请手动复制房间号";
+    setMessage(failText);
+    pushToast(failText);
+  }, [roomState?.code, pushToast]);
+
   const createRoom = () => {
     setMessage("");
     send("room:create", { name: name || "Guest", roundsTotal });
@@ -510,10 +582,7 @@ export default function App() {
                 <span>房间 {roomState.code}</span>
                 <button
                   className="chip-action"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(roomState.code);
-                    setCopied(true);
-                  }}
+                  onClick={copyRoomCode}
                   title="复制房间号"
                 >
                   {copied ? "已复制" : "复制"}
@@ -586,10 +655,7 @@ export default function App() {
               <span className="waiting-room-code">房间号 {roomState.code}</span>
               <button
                 className="chip-action"
-                onClick={() => {
-                  navigator.clipboard?.writeText(roomState.code);
-                  setCopied(true);
-                }}
+                onClick={copyRoomCode}
                 title="复制房间号"
               >
                 {copied ? "已复制" : "复制"}
