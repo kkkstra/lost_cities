@@ -76,6 +76,12 @@ export function handleAction(room, playerId, action) {
   return result;
 }
 
+export function restartRoom(room) {
+  const roundsTotal = room.state?.roundsTotal ?? 3;
+  room.state = createGameState(roundsTotal);
+  return { ok: true };
+}
+
 export function reconnectPlayer(room, socket, token) {
   const playerId = room.reconnectTokens.get(token);
   if (!playerId) return { ok: false, error: "Invalid token" };

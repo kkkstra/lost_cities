@@ -113,6 +113,14 @@ function describePlayAction(prevState, nextState, actorSeat, selfSeat) {
 }
 
 function describeDrawAction(prevState, nextState) {
+  if ((nextState?.roundIndex ?? 0) > (prevState?.roundIndex ?? 0)) {
+    return "完成了抽牌，进入下一局";
+  }
+
+  if (!prevState?.finished && nextState?.finished) {
+    return "完成了抽牌，本局结束";
+  }
+
   if ((nextState?.deckCount ?? 0) < (prevState?.deckCount ?? 0)) {
     return "从牌堆抽了一张牌";
   }
@@ -128,6 +136,33 @@ function describeDrawAction(prevState, nextState) {
   return "完成了抽牌";
 }
 
+function calcMatchWins(history, selfSeat) {
+  let you = 0;
+  let opponent = 0;
+  if (!Array.isArray(history)) {
+    return { you, opponent };
+  }
+  for (const round of history) {
+    const myRound = round?.scores?.[selfSeat] ?? 0;
+    const opponentRound = round?.scores?.[selfSeat === 0 ? 1 : 0] ?? 0;
+    if (myRound > opponentRound) {
+      you += 1;
+    } else if (myRound < opponentRound) {
+      opponent += 1;
+    }
+  }
+  return { you, opponent };
+}
+
+function formatActionTime() {
+  return new Date().toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
 export default function App() {
   const defaultHost = typeof window !== "undefined" && window.location.hostname ? window.location.hostname : "localhost";
   const socketProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
@@ -140,12 +175,13 @@ export default function App() {
         : "";
   const [activeHost, setActiveHost] = useState(defaultHost);
   const [activePort, setActivePort] = useState(defaultPort);
+  const [socketSession, setSocketSession] = useState(0);
   const [pendingHost, setPendingHost] = useState(defaultHost);
   const [pendingPort, setPendingPort] = useState(defaultPort);
   const serverUrl = useMemo(() => {
     const portPart = activePort ? `:${activePort}` : "";
-    return `${socketProtocol}://${activeHost}${portPart}/ws/`;
-  }, [socketProtocol, activeHost, activePort]);
+    return `${socketProtocol}://${activeHost}${portPart}/ws/?session=${socketSession}`;
+  }, [socketProtocol, activeHost, activePort, socketSession]);
   const { socket, connected } = useSocket(serverUrl);
   const [roomState, setRoomState] = useState(null);
   const [gameState, setGameState] = useState(null);
@@ -156,6 +192,10 @@ export default function App() {
   const [phaseAction, setPhaseAction] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showGameMenu, setShowGameMenu] = useState(false);
+  const [showActionHistory, setShowActionHistory] = useState(false);
+  const [actionHistory, setActionHistory] = useState([]);
+  const [roundResultModal, setRoundResultModal] = useState(null);
   const [roundsTotal, setRoundsTotal] = useState("3");
   const [copied, setCopied] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -169,8 +209,10 @@ export default function App() {
   });
   const toastTimersRef = useRef(new Map());
   const nextToastIdRef = useRef(1);
+  const nextActionHistoryIdRef = useRef(1);
   const prevRoomRef = useRef(null);
   const prevGameRef = useRef(null);
+  const prevHistoryLenRef = useRef(0);
 
   const playerIndex = roomState?.playerIndex ?? -1;
   const myPlayer = roomState?.players?.find((p) => p.id === roomState.you) || null;
@@ -178,6 +220,8 @@ export default function App() {
   const myName = myPlayer?.name || "你";
   const opponentName = opponentPlayer?.name || "等待对手";
   const isMyTurn = gameState && gameState.turn === playerIndex;
+  const roundHistory = gameState?.history || [];
+  const matchWins = useMemo(() => calcMatchWins(roundHistory, playerIndex === -1 ? 0 : playerIndex), [roundHistory, playerIndex]);
   const liveRoundScores = useMemo(() => {
     if (!gameState) return null;
     return {
@@ -195,6 +239,12 @@ export default function App() {
       toastTimersRef.current.delete(id);
     }, 2800);
     toastTimersRef.current.set(id, timer);
+  }, []);
+  const pushActionHistory = useCallback((text) => {
+    if (!text) return;
+    const id = nextActionHistoryIdRef.current++;
+    const entry = { id, text, at: formatActionTime() };
+    setActionHistory((prev) => [...prev, entry].slice(-80));
   }, []);
 
   useEffect(() => {
@@ -236,6 +286,13 @@ export default function App() {
     setReconnectCode(roomState.code);
   }, [roomState?.code]);
 
+  useEffect(() => {
+    if (roomState) return;
+    setShowGameMenu(false);
+    setShowActionHistory(false);
+    setActionHistory([]);
+  }, [roomState]);
+
   useEffect(() => () => {
     for (const timer of toastTimersRef.current.values()) {
       clearTimeout(timer);
@@ -250,6 +307,10 @@ export default function App() {
     }
     const prevRoom = prevRoomRef.current;
     if (prevRoom) {
+      if (prevRoom.code !== roomState.code) {
+        setShowActionHistory(false);
+        setActionHistory([]);
+      }
       const prevIds = new Set(prevRoom.players.map((player) => player.id));
       const joinedPlayers = roomState.players.filter((player) => !prevIds.has(player.id));
       for (const player of joinedPlayers) {
@@ -266,19 +327,64 @@ export default function App() {
     }
     const prevGame = prevGameRef.current;
     if (prevGame) {
+      if (
+        (gameState.roundIndex ?? 1) === 1 &&
+        (gameState.history?.length ?? 0) === 0 &&
+        (((prevGame.roundIndex ?? 1) !== 1) || (prevGame.history?.length ?? 0) > 0)
+      ) {
+        pushToast("对局已重新开始");
+        setActionHistory([]);
+        pushActionHistory("对局已重新开始");
+        prevGameRef.current = gameState;
+        return;
+      }
+
       const playerNamesBySeat = new Map(roomState.players.map((player) => [player.seat, player.name]));
       const actorName = (seat) => (seat === playerIndex ? "你" : playerNamesBySeat.get(seat) || "对手");
 
       if (prevGame.phase === "play" && gameState.phase === "draw" && prevGame.turn === gameState.turn) {
         const actorSeat = gameState.turn;
-        pushToast(`${actorName(actorSeat)}${describePlayAction(prevGame, gameState, actorSeat, playerIndex)}`);
+        const actionText = `${actorName(actorSeat)}${describePlayAction(prevGame, gameState, actorSeat, playerIndex)}`;
+        pushToast(actionText);
+        pushActionHistory(actionText);
       } else if (prevGame.phase === "draw" && gameState.phase === "play" && prevGame.turn !== gameState.turn) {
         const actorSeat = prevGame.turn;
-        pushToast(`${actorName(actorSeat)}${describeDrawAction(prevGame, gameState)}`);
+        const actionText = `${actorName(actorSeat)}${describeDrawAction(prevGame, gameState)}`;
+        pushToast(actionText);
+        pushActionHistory(actionText);
       }
     }
     prevGameRef.current = gameState;
-  }, [gameState, roomState, playerIndex, pushToast]);
+  }, [gameState, roomState, playerIndex, pushToast, pushActionHistory]);
+
+  useEffect(() => {
+    const history = gameState?.history || [];
+    if (!gameState || !roomState || playerIndex === -1) {
+      prevHistoryLenRef.current = history.length;
+      return;
+    }
+
+    const prevLen = prevHistoryLenRef.current;
+    if (history.length > prevLen) {
+      const latest = history[history.length - 1];
+      const myRoundScore = latest?.scores?.[playerIndex] ?? 0;
+      const opponentRoundScore = latest?.scores?.[playerIndex === 0 ? 1 : 0] ?? 0;
+      const latestWins = calcMatchWins(history, playerIndex);
+      let winnerText = "本局平局";
+      if (myRoundScore > opponentRoundScore) {
+        winnerText = `${myName} 赢下本局`;
+      } else if (myRoundScore < opponentRoundScore) {
+        winnerText = `${opponentName} 赢下本局`;
+      }
+      setRoundResultModal({
+        winnerText,
+        myRoundScore,
+        opponentRoundScore,
+        matchScoreText: `当前比分 ${myName} ${latestWins.you} : ${latestWins.opponent} ${opponentName}`
+      });
+    }
+    prevHistoryLenRef.current = history.length;
+  }, [gameState, roomState, playerIndex, myName, opponentName]);
 
   const canPlay = isMyTurn && gameState?.phase === "play";
 
@@ -304,6 +410,34 @@ export default function App() {
   const reconnect = () => {
     if (!reconnectCode || !reconnectToken) return;
     send("room:reconnect", { code: reconnectCode, token: reconnectToken });
+  };
+
+  const restartGame = () => {
+    setShowGameMenu(false);
+    send("game:restart");
+    pushToast("已发送重新开始请求");
+  };
+
+  const leaveRoom = () => {
+    setShowGameMenu(false);
+    setShowActionHistory(false);
+    setRoundResultModal(null);
+    setActionHistory([]);
+    setRoomState(null);
+    setGameState(null);
+    setSelectedCardId(null);
+    setPhaseAction(null);
+    setMessage("");
+    setReconnectToken("");
+    setReconnectCode("");
+    prevRoomRef.current = null;
+    prevGameRef.current = null;
+    prevHistoryLenRef.current = 0;
+    nextActionHistoryIdRef.current = 1;
+    localStorage.removeItem("lostcities-token");
+    localStorage.removeItem("lostcities-code");
+    setSocketSession((prev) => prev + 1);
+    pushToast("已退出房间");
   };
 
   const playCard = (target) => {
@@ -351,8 +485,24 @@ export default function App() {
                 </span>
               </div>
               <div className={`info-chip header-chip header-score ${isMyTurn ? "highlight" : ""}`}>
-                {myName} vs {opponentName} · 总分 你 {gameState.scores[playerIndex]} : 对手 {gameState.scores[playerIndex === 0 ? 1 : 0]} · 本局 你 {liveRoundScores?.you ?? 0} : 对手 {liveRoundScores?.opponent ?? 0}
+                {myName} vs {opponentName} · 总分(赢局) {matchWins.you} : {matchWins.opponent} · 本局分 {liveRoundScores?.you ?? 0} : {liveRoundScores?.opponent ?? 0}
               </div>
+            </div>
+          )}
+          {roomState && (
+            <div className="menu-wrap">
+              <button
+                className="secondary menu-btn"
+                onClick={() => setShowGameMenu((prev) => !prev)}
+              >
+                菜单
+              </button>
+              {showGameMenu && (
+                <div className="menu-dropdown">
+                  <button className="secondary" onClick={restartGame}>重新开始</button>
+                  <button className="secondary" onClick={leaveRoom}>退出房间</button>
+                </div>
+              )}
             </div>
           )}
           <div className="badge">{connected ? "已连接" : "未连接"}</div>
@@ -363,6 +513,60 @@ export default function App() {
           {toasts.map((toast) => (
             <div key={toast.id} className="toast-item">{toast.text}</div>
           ))}
+        </div>
+      )}
+      {roundResultModal && (
+        <div className="modal-backdrop" onClick={() => setRoundResultModal(null)}>
+          <div className="modal result-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{roundResultModal.winnerText}</h3>
+            <div className="notice">本局分数 你 {roundResultModal.myRoundScore} : 对手 {roundResultModal.opponentRoundScore}</div>
+            <div className="notice">{roundResultModal.matchScoreText}</div>
+            <div className="modal-actions">
+              <button onClick={() => setRoundResultModal(null)}>继续</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {roomState && gameState && (
+        <div className="action-history-float">
+          {showActionHistory && (
+            <aside className="action-history-panel">
+              <div className="action-history-head">
+                <span>操作历史</span>
+                <button
+                  className="secondary action-history-close"
+                  onClick={() => setShowActionHistory(false)}
+                >
+                  关闭
+                </button>
+              </div>
+              <div className="action-history-list">
+                {actionHistory.length === 0 ? (
+                  <div className="action-history-empty">暂无操作记录</div>
+                ) : (
+                  [...actionHistory].reverse().map((item) => (
+                    <div key={item.id} className="action-history-item">
+                      <div className="action-history-time">{item.at}</div>
+                      <div className="action-history-text">{item.text}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </aside>
+          )}
+          <button
+            className="action-history-fab"
+            onClick={() => setShowActionHistory((prev) => !prev)}
+            title="查看操作历史"
+            aria-label="查看操作历史"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" />
+              <path d="M12 8v5l3 2" />
+              <path d="M8 4H4v4" />
+              <path d="M4 8a9 9 0 1 0 3-6.7" />
+            </svg>
+          </button>
         </div>
       )}
 

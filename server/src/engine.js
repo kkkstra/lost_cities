@@ -133,6 +133,7 @@ function getPlayerView(state, playerIndex) {
     roundsTotal: state.roundsTotal,
     roundIndex: state.roundIndex,
     scores: state.scores,
+    history: state.history,
     roundScores,
     gameOver: isGameOver(state),
     turn: round.turn,

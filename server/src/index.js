@@ -1,5 +1,5 @@
 import { WebSocketServer } from "ws";
-import { createRoom, addPlayer, removePlayer, roomStateFor, gameStateFor, handleAction, reconnectPlayer, pruneRoom } from "./room.js";
+import { createRoom, addPlayer, removePlayer, roomStateFor, gameStateFor, handleAction, reconnectPlayer, pruneRoom, restartRoom } from "./room.js";
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ port: PORT });
@@ -97,6 +97,26 @@ wss.on("connection", (socket) => {
       const result = handleAction(room, meta.playerId, payload);
       if (!result.ok) {
         send(socket, "error", { message: result.error });
+        return;
+      }
+      broadcastRoom(room);
+      return;
+    }
+
+    if (type === "game:restart") {
+      const meta = socketToPlayer.get(socket);
+      if (!meta) {
+        send(socket, "error", { message: "Not in room" });
+        return;
+      }
+      const room = getRoom(meta.roomCode);
+      if (!room) {
+        send(socket, "error", { message: "Room not found" });
+        return;
+      }
+      const result = restartRoom(room);
+      if (!result.ok) {
+        send(socket, "error", { message: result.error || "Failed to restart" });
         return;
       }
       broadcastRoom(room);
